@@ -509,12 +509,29 @@ fn apply_optional_field(
         }
         "turn_template" => Some(if cleared {
             config.turn_template = None;
-            Ok(format!("`{key}` cleared (`[{{sender}}](<@{{user_id}}>): {{message}}` applies)."))
-        } else if !value.contains("{sender}") || !value.contains("{message}") {
-            Err(format!("`{key}` must contain `{{sender}}` and `{{message}}`, got `{value}`."))
+            Ok(format!(
+                "`{key}` cleared (`[{{{{sender}}}}](<@{{{{user_id}}}}>): {{{{message}}}}` applies)."
+            ))
+        } else if !value.contains("{{sender}}") || !value.contains("{{message}}") {
+            Err(format!(
+                "`{key}` must contain `{{{{sender}}}}` and `{{{{message}}}}`, got `{value}`."
+            ))
         } else {
-            config.turn_template = Some(value.to_owned());
-            Ok(format!("`{key}` set to `{value}`."))
+            let unknown = prompts::unknown_tokens_in(value, super::conversation::TURN_TOKENS);
+            if unknown.is_empty() {
+                config.turn_template = Some(value.to_owned());
+                Ok(format!("`{key}` set to `{value}`."))
+            } else {
+                let listed = unknown
+                    .iter()
+                    .map(|token| format!("{{{{{token}}}}}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(format!(
+                    "unknown template token(s) {listed} - valid: {}.",
+                    super::conversation::TURN_TOKENS.join(", ")
+                ))
+            }
         }),
         _ => None,
     }
@@ -3443,13 +3460,13 @@ mod tests {
         apply_set(
             &mut config,
             "turn_template",
-            "<{sender}> {message}",
+            "<{{sender}}> {{message}}",
             PLATFORM_LIMIT,
             CHUNK_FLOOR,
             IMAGE_CAP,
         )
         .expect("template expected");
-        assert_eq!(config.turn_template.as_deref(), Some("<{sender}> {message}"));
+        assert_eq!(config.turn_template.as_deref(), Some("<{{sender}}> {{message}}"));
         apply_set(
             &mut config,
             "turn_template",
@@ -3459,6 +3476,19 @@ mod tests {
             IMAGE_CAP,
         )
         .unwrap_err();
+        // Prompt-side tokens are unknown to the turn vocabulary and are
+        // rejected at set time, naming the offender with the valid list.
+        let err = apply_set(
+            &mut config,
+            "turn_template",
+            "{{sender}}: {{message}} on {{date}}",
+            PLATFORM_LIMIT,
+            CHUNK_FLOOR,
+            IMAGE_CAP,
+        )
+        .unwrap_err();
+        assert!(err.contains("{{date}}"), "the offending token must be named: {err}");
+        assert!(err.contains("valid:"), "the valid list must be included: {err}");
         apply_set(&mut config, "turn_template", "clear", PLATFORM_LIMIT, CHUNK_FLOOR, IMAGE_CAP)
             .expect("clear expected");
         assert_eq!(config.turn_template, None);

@@ -157,8 +157,8 @@ pub struct MessagePayload {
     /// recognition); empty for platforms/events without attachments.
     pub attachments: Vec<AttachmentPayload>,
     /// Author display name at capture time (channel nick, else platform
-    /// username; best effort). Lets history consumers render `{sender}:
-    /// {message}` context lines without a gateway cache.
+    /// username; best effort). Lets history consumers render
+    /// `{{sender}}: {{message}}` context lines without a gateway cache.
     pub author_name: Option<String>,
     /// Guild display name at capture time (best effort from the platform;
     /// `None` in DMs and channel-less events). Lets history consumers

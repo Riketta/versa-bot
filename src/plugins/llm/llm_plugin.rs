@@ -2021,7 +2021,7 @@ mod tests {
                 &command_event(Some(1)),
                 &CommandArgs(vec![
                     ("key".to_owned(), "turn_template".to_owned()),
-                    ("value".to_owned(), "```{sender}: {message}```".to_owned()),
+                    ("value".to_owned(), "```{{sender}}: {{message}}```".to_owned()),
                 ]),
                 &fixture.services,
             )
@@ -2037,7 +2037,7 @@ mod tests {
         assert_eq!(reply.matches("```").count(), 2, "fence must stay intact: {reply}");
         assert!(!reply.contains("````"), "no four-tick runs expected: {reply}");
         assert!(
-            reply.contains("turn_template = ``{sender}: {message}``"),
+            reply.contains("turn_template = ``{{sender}}: {{message}}``"),
             "sanitized value expected: {reply}"
         );
     }

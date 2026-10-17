@@ -7,8 +7,10 @@
 //! Rendering is request-scoped: `PromptVars` is built once per request and
 //! every token sees the same snapshot. Tokens unknown to the renderer stay
 //! literal (`{{oops}}` remains visible - typos are self-diagnosing), and
-//! there is no escape syntax by design: prompts quoting the turn template's
-//! single-brace fields (`{sender}`) are untouched.
+//! there is no escape syntax by design. Turn templates share this scanner
+//! and syntax but resolve a different, capture-baked vocabulary - so a
+//! prompt quoting `{{sender}}` keeps it literal (not a prompt token), and
+//! vice versa.
 
 use super::providers::LlmSettings;
 
@@ -19,6 +21,46 @@ pub(crate) const VALID_TOKENS: &[&str] =
 
 const OPEN: &str = "{{";
 const CLOSE: &str = "}}";
+
+/// The scanner shared by prompt templates and turn templates: substitutes
+/// every well-formed `{{token}}` pair the resolver knows; unknown tokens,
+/// stray braces, and unclosed pairs pass through byte for byte. Single
+/// pass - substituted values are never rescanned for placeholders, so a
+/// value that itself looks like a token cannot be eaten. The resolver's
+/// values may borrow from its own environment (`'v`), independent of the
+/// token slice it is handed.
+pub(crate) fn render_tokens<'v>(
+    template: &str,
+    resolve: impl Fn(&str) -> Option<&'v str>,
+) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(start) = rest.find(OPEN) {
+        // `find` returns a match start - always a char boundary.
+        out.push_str(rest.get(..start).unwrap_or_default());
+        // "{{" is ASCII, so the bytes after it are on a boundary too.
+        let Some(after_open) = rest.get(start + OPEN.len()..) else {
+            break;
+        };
+        if let Some(end) = after_open.find(CLOSE) {
+            let token = after_open.get(..end).unwrap_or_default();
+            if let Some(value) = resolve(token) {
+                out.push_str(value);
+            } else {
+                out.push_str(OPEN);
+                out.push_str(token);
+                out.push_str(CLOSE);
+            }
+            rest = after_open.get(end + CLOSE.len()..).unwrap_or_default();
+        } else {
+            // Unclosed "{{": the rest is literal, braces included.
+            out.push_str(rest.get(start..).unwrap_or_default());
+            rest = "";
+        }
+    }
+    out.push_str(rest);
+    out
+}
 
 /// Values substituted into one request's prompts. Time is snapshotted once,
 /// so all time tokens agree even across an hour boundary mid-request.
@@ -108,39 +150,21 @@ impl PromptVars {
 /// tokens and text outside well-formed `{{...}}` pairs pass through byte
 /// for byte - a prompt without tokens renders as itself.
 pub fn render_prompt(template: &str, vars: &PromptVars) -> String {
-    let mut out = String::with_capacity(template.len());
-    let mut rest = template;
-    while let Some(start) = rest.find(OPEN) {
-        // `find` returns a match start - always a char boundary.
-        out.push_str(rest.get(..start).unwrap_or_default());
-        // "{{" is ASCII, so the bytes after it are on a boundary too.
-        let Some(after_open) = rest.get(start + OPEN.len()..) else {
-            break;
-        };
-        if let Some(end) = after_open.find(CLOSE) {
-            let token = after_open.get(..end).unwrap_or_default();
-            if let Some(value) = vars.resolve(token) {
-                out.push_str(value);
-            } else {
-                out.push_str(OPEN);
-                out.push_str(token);
-                out.push_str(CLOSE);
-            }
-            rest = after_open.get(end + CLOSE.len()..).unwrap_or_default();
-        } else {
-            // Unclosed "{{": the rest is literal, braces included.
-            out.push_str(rest.get(start..).unwrap_or_default());
-            rest = "";
-        }
-    }
-    out.push_str(rest);
-    out
+    render_tokens(template, |token| vars.resolve(token))
 }
 
 /// Tokens appearing in the template that the renderer does not know.
 /// Deduplicated, first-appearance order. Only well-formed `{{...}}` pairs
 /// are scanned; a stray `{{` is not a token.
 pub fn unknown_tokens(template: &str) -> Vec<&str> {
+    unknown_tokens_in(template, VALID_TOKENS)
+}
+
+/// Vocabulary-scanned variant of [`unknown_tokens`]: same deduplicated
+/// first-appearance scan, against a caller-supplied token list (the turn
+/// templates' capture-baked set). Only well-formed `{{...}}` pairs are
+/// considered; a stray `{{` is not a token.
+pub(crate) fn unknown_tokens_in<'t>(template: &'t str, valid: &[&str]) -> Vec<&'t str> {
     let mut unknown: Vec<&str> = Vec::new();
     let mut rest = template;
     while let Some(start) = rest.find(OPEN) {
@@ -150,7 +174,7 @@ pub fn unknown_tokens(template: &str) -> Vec<&str> {
         match after_open.find(CLOSE) {
             Some(end) => {
                 let token = after_open.get(..end).unwrap_or_default();
-                if !VALID_TOKENS.contains(&token) && !unknown.contains(&token) {
+                if !valid.contains(&token) && !unknown.contains(&token) {
                     unknown.push(token);
                 }
                 rest = after_open.get(end + CLOSE.len()..).unwrap_or_default();
@@ -302,7 +326,10 @@ mod tests {
         assert_eq!(render_prompt("{{}}", &vars), "{{}}");
         // An unclosed brace keeps the rest byte for byte.
         assert_eq!(render_prompt("hi {{bot", &vars), "hi {{bot");
-        // Single braces (turn-template syntax) are not substituted.
+        // Turn-template tokens are not prompt tokens: a prompt quoting one
+        // keeps it literal (and vice versa on the turn side).
+        assert_eq!(render_prompt("{{sender}} {{message}}", &vars), "{{sender}} {{message}}");
+        // Legacy single-brace text passes through untouched.
         assert_eq!(
             render_prompt("[{sender}](<@{user_id}>): {message}", &vars),
             "[{sender}](<@{user_id}>): {message}"

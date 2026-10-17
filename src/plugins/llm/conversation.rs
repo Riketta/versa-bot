@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::completion_port::{ChatMessage, ChatRole};
 use super::model::{CaptureMode, ChannelConfig, ConversationState};
-use super::prompts::{PromptVars, render_prompt};
+use super::prompts::{PromptVars, render_prompt, render_tokens};
 use super::providers::{LlmSettings, SummaryPlacement};
 
 /// Slot placeholder for the summary placements that keep a dedicated
@@ -21,10 +21,17 @@ pub const NO_EARLIER_CONTEXT: &str = "(no earlier context)";
 
 /// Default rendering of user turns in the context: the `[Name]<@id>`-style
 /// tag shape normalized inbound messages carry, so the model can both read
-/// who spoke and assemble clean Discord mentions. Parameters: `{sender}`
-/// (display name), `{user_id}`, `{guild_name}`, `{time}` (capture time,
-/// unix seconds), `{message}`.
-pub const DEFAULT_TURN_TEMPLATE: &str = "[{sender}](<@{user_id}>): {message}";
+/// who spoke and assemble clean Discord mentions. Uses the prompt
+/// templates' `{{token}}` syntax (rendered by the same scanner); the
+/// capture-baked vocabulary is [`TURN_TOKENS`].
+pub const DEFAULT_TURN_TEMPLATE: &str = "[{{sender}}](<@{{user_id}}>): {{message}}";
+
+/// Every token a turn template resolves. Deliberately disjoint from the
+/// request-scoped prompt tokens (`{{date}}`, `{{hour}}`, ...): turns are
+/// history - the values here are baked into the stored record at capture,
+/// while request-scoped tokens would rewrite rendered history on every
+/// assembly and bust provider prompt caches.
+pub(crate) const TURN_TOKENS: &[&str] = &["sender", "user_id", "guild_name", "time", "message"];
 
 /// Placeholder file-name base: the model only needs the "this was an
 /// image" hint - the description lives in the markdown alt-text slot.
@@ -72,12 +79,9 @@ pub fn record_content(record: &ConversationRecord) -> String {
 /// Renders one user record through the turn template. Every parameter is
 /// capture-baked, so a rendered turn never changes after the fact; legacy
 /// records from before a field existed render it as an empty string
-/// (`{sender}` falls back to `user`).
-///
-/// Single pass by design: substituted values are never rescanned for
-/// placeholders. A display name is guild input - one containing
-/// `{message}` or `{time}` must not eat the message into the name slot,
-/// which chained `replace` calls would allow.
+/// (`{{sender}}` falls back to `user`). Rendered through the shared
+/// `{{token}}` scanner: single pass, unknown tokens stay literal
+/// (including prompt-side ones like `{{date}}` - see [`TURN_TOKENS`]).
 #[must_use]
 pub fn render_user_turn(template: &str, record: &ConversationRecord) -> String {
     let content = record_content(record);
@@ -85,36 +89,14 @@ pub fn render_user_turn(template: &str, record: &ConversationRecord) -> String {
     let user_id = record.sender_id.map(|id| id.to_string()).unwrap_or_default();
     let guild_name = record.guild_name.as_deref().unwrap_or_default();
     let time = record.captured_at.to_string();
-
-    let mut out = String::with_capacity(template.len());
-    let mut rest = template;
-    while let Some(open) = rest.find('{') {
-        // `find` returns a char boundary; `get` keeps the slicing lints happy.
-        if let Some(head) = rest.get(..open) {
-            out.push_str(head);
-        }
-        rest = rest.get(open..).unwrap_or(rest);
-        let substituted = rest
-            .strip_prefix("{sender}")
-            .map(|tail| (sender, tail))
-            .or_else(|| rest.strip_prefix("{user_id}").map(|tail| (user_id.as_str(), tail)))
-            .or_else(|| rest.strip_prefix("{guild_name}").map(|tail| (guild_name, tail)))
-            .or_else(|| rest.strip_prefix("{time}").map(|tail| (time.as_str(), tail)))
-            .or_else(|| rest.strip_prefix("{message}").map(|tail| (content.as_str(), tail)));
-        match substituted {
-            Some((value, tail)) => {
-                out.push_str(value);
-                rest = tail;
-            }
-            // Not a known placeholder: keep the brace literally.
-            None => {
-                out.push('{');
-                rest = rest.get(1..).unwrap_or(rest);
-            }
-        }
-    }
-    out.push_str(rest);
-    out
+    render_tokens(template, |token| match token {
+        "sender" => Some(sender),
+        "user_id" => Some(user_id.as_str()),
+        "guild_name" => Some(guild_name),
+        "time" => Some(time.as_str()),
+        "message" => Some(content.as_str()),
+        _ => None,
+    })
 }
 
 /// One image attached to a captured user message: the recognition
@@ -512,13 +494,14 @@ mod tests {
         }
     }
 
-    /// Mechanics tests render turns through the flat `{sender}: {message}`
-    /// template and keep the react tool block out, so their exact-string
-    /// assertions stay about the mechanic under test - not about the
-    /// (tag-styled) default template or the on-by-default react appendix.
+    /// Mechanics tests render turns through the flat `{{sender}}:
+    /// {{message}}` template and keep the react tool block out, so their
+    /// exact-string assertions stay about the mechanic under test - not
+    /// about the (tag-styled) default template or the on-by-default react
+    /// appendix.
     fn flat_turn_config() -> ChannelConfig {
         ChannelConfig {
-            turn_template: Some("{sender}: {message}".to_owned()),
+            turn_template: Some("{{sender}}: {{message}}".to_owned()),
             react: false,
             ..ChannelConfig::assigned("m".to_owned())
         }
@@ -860,7 +843,7 @@ mod tests {
     #[test]
     fn custom_turn_template_is_substituted() {
         let config = ChannelConfig {
-            turn_template: Some("<{sender}> {message}".to_owned()),
+            turn_template: Some("<{{sender}}> {{message}}".to_owned()),
             ..ChannelConfig::assigned("m".to_owned())
         };
         let settings = LlmSettings::default();
@@ -1075,7 +1058,7 @@ mod tests {
     #[test]
     fn rendered_context_carries_no_dynamic_record_fields() {
         let config = ChannelConfig {
-            turn_template: Some("{sender}: {message}".to_owned()),
+            turn_template: Some("{{sender}}: {{message}}".to_owned()),
             ..no_compaction_config()
         };
         let settings = LlmSettings::default();
@@ -1139,13 +1122,13 @@ mod tests {
     /// `replace` would substitute the message into the name slot.
     #[test]
     fn adversarial_sender_name_is_not_rescanned_for_placeholders() {
-        let mut user = user_record(10, "Ann {message} {time}", "hello");
+        let mut user = user_record(10, "Ann {{message}} {{time}}", "hello");
         user.sender_id = Some(42);
         user.captured_at = 7;
 
         let rendered = render_user_turn(DEFAULT_TURN_TEMPLATE, &user);
 
-        assert_eq!(rendered, "[Ann {message} {time}](<@42>): hello");
+        assert_eq!(rendered, "[Ann {{message}} {{time}}](<@42>): hello");
     }
 
     /// Custom templates reach every capture-baked field; legacy records
@@ -1154,7 +1137,7 @@ mod tests {
     fn turn_template_params_render_capture_baked_fields() {
         let config = ChannelConfig {
             turn_template: Some(
-                "{guild_name} / {time}: {sender} ({user_id}): {message}".to_owned(),
+                "{{guild_name}} / {{time}}: {{sender}} ({{user_id}}): {{message}}".to_owned(),
             ),
             ..ChannelConfig::assigned("m".to_owned())
         };
@@ -1174,6 +1157,18 @@ mod tests {
         let rendered = render(&messages);
         assert!(rendered.contains("Crafters / 1735689600: alice (42): hi\n"), "{rendered}");
         assert!(rendered.contains(" / 1735689601: bob (): hello\n"), "{rendered}");
+    }
+
+    /// The vocabularies are disjoint by design: a request-scoped prompt
+    /// token in a turn template is unknown there and stays literal -
+    /// history must not rewrite itself as the clock ticks.
+    #[test]
+    fn prompt_tokens_stay_literal_in_turn_templates() {
+        let user = user_record(10, "alice", "hi");
+
+        let rendered = render_user_turn("{{date}} {{hour}}: {{sender}}", &user);
+
+        assert_eq!(rendered, "{{date}} {{hour}}: alice");
     }
 
     #[test]

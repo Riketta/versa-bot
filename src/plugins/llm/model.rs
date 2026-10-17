@@ -242,9 +242,10 @@ pub struct ChannelConfig {
     /// wide default.
     #[serde(default)]
     pub split_length: Option<usize>,
-    /// User-turn rendering in the context; `{sender}`, `{user_id}`,
-    /// `{guild_name}`, `{time}` (unix seconds) and `{message}` are
-    /// substituted. `None` = `[{sender}](<@{user_id}>): {message}`.
+    /// User-turn rendering in the context; the capture-baked tokens
+    /// `{{sender}}`, `{{user_id}}`, `{{guild_name}}`, `{{time}}` (unix
+    /// seconds) and `{{message}}` are substituted. `None` =
+    /// `[{{sender}}](<@{{user_id}}>): {{message}}`.
     #[serde(default)]
     pub turn_template: Option<String>,
     /// Estimated token budget for the assembled context. When set, turns

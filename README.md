@@ -728,10 +728,14 @@ extra_body = { chat_template_kwargs = { enable_thinking = "${enable_reasoning}" 
   stable placeholder if none - default `summary_placement`, which merges
   into the prompt instead when a model declares `system_suffix`) -> live
   window, oldest first. User turns render through the channel's turn
-  template (`[{sender}](<@{user_id}>): {message}` by default - the
+  template (`[{{sender}}](<@{{user_id}}>): {{message}}` by default - the
   `[Name]<@id>` tag shape normalized inbound messages carry, so the model
-  can assemble clean mentions; also available: `{guild_name}`, `{time}`
-  (unix seconds)); bot turns are plain assistant messages. Template fields
+  can assemble clean mentions; also available: `{{guild_name}}`,
+  `{{time}}` (unix seconds); same `{{token}}` syntax and scanner as the
+  prompt templates, but a separate capture-baked vocabulary - request-
+  scoped prompt tokens like `{{date}}` are rejected at set time, since
+  embedded in history they would rewrite rendered turns as the clock
+  ticks); bot turns are plain assistant messages. Template fields
   are baked into the stored record at capture, so a rendered turn never
   changes retroactively. The window is selected newest-first under the
   token budget and `context_messages`, whichever bites first - the newest turn is
@@ -887,7 +891,7 @@ dropdown under Discord's 25-choice cap.
 | `capture` | `bot_related` or `all_messages` | `all_messages` | what enters the channel's history: everything, or only messages mentioning or replying the bot (`bot_related` - chime-ins then have almost no material) |
 | `context_messages` | whole number >= 1 | 100 | live-window size in messages; reaching it triggers compaction |
 | `context_tokens` | whole number of tokens | auto | prompt-side token budget. Auto = the model's declared `context_window` minus the completion reserve and a margin, active once the endpoint has reported its first usage (before that, count-only filling by `context_messages`) |
-| `turn_template` | template containing `{sender}` and `{message}` | `[{sender}](<@{user_id}>): {message}` | how user turns render into the model context; fields: `{sender}`, `{user_id}`, `{guild_name}`, `{time}` (unix), `{message}` |
+| `turn_template` | template containing `{{sender}}` and `{{message}}` | `[{{sender}}](<@{{user_id}}>): {{message}}` | how user turns render into the model context; fields: `{{sender}}`, `{{user_id}}`, `{{guild_name}}`, `{{time}}` (unix), `{{message}}` - same `{{token}}` syntax as the prompt templates, separate vocabulary |
 | `compaction` | on / off | on | summarize-and-cutoff when the window outgrows `context_messages` |
 | `compaction_model` | declared model ref | plugin `[llm] compaction_model`, else the channel's chat model | which model writes the summaries |
 | `images` | on / off | on | describe attached images on captured messages via the recognition model; needs an operator `[llm] image_model` - without one, images still capture as undescribed placeholders |
