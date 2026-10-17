@@ -1462,9 +1462,9 @@ Context start: {context_start}",
     }
 }
 
-/// `/llm_admin`: makes the channel the command is run in the guild's service
-/// channel - LLM errors and service notices are reported there (last write
-/// wins, one per guild).
+/// `/llm_service_notices`: makes the channel the command is run in the
+/// guild's service channel - LLM errors and service notices are reported
+/// there (last write wins, one per guild).
 pub(super) struct AssignServiceChannelHandler;
 
 #[async_trait]
@@ -1494,14 +1494,15 @@ impl CommandHandler for AssignServiceChannelHandler {
         services
             .chat_output
             .send(command_reply(
-                "Service channel assigned: LLM errors and notices will be reported here.",
+                "Service notices channel assigned: LLM errors and notices will be reported here.",
             ))
             .await?;
         Ok(())
     }
 }
 
-/// `/llm_admin_clear`: clears the guild's service channel (idempotent).
+/// `/llm_service_notices_clear`: clears the guild's service channel
+/// (idempotent).
 pub(super) struct ClearServiceChannelHandler;
 
 #[async_trait]
@@ -1522,7 +1523,7 @@ impl CommandHandler for ClearServiceChannelHandler {
 
         storage.delete(NAMESPACE, SERVICE_CHANNEL_KEY).await?;
 
-        services.chat_output.send(command_reply("Service channel cleared.")).await?;
+        services.chat_output.send(command_reply("Service notices channel cleared.")).await?;
         Ok(())
     }
 }

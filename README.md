@@ -189,7 +189,7 @@ the target channel.
 /llm_set streaming on                        # optional: the answer live-edits while it generates
 /llm_set_prompt kind:system prompt:...       # persona; long prompts ride as an attached file
 /llm_status                                  # verify the whole setup at a glance
-/llm_admin                                   # in #staff: LLM error notices land here
+/llm_service_notices                        # in #staff: LLM error notices land here
 
 /lol_store_enable                            # in #lol-sales: store tracking on (admin)
 /lol_store_assign                            # in #lol-sales: announcements post here
@@ -864,8 +864,8 @@ plugin](#authorization-auth-plugin)).
 | `/llm_status` | user | report: active system prompt (override or plugin default, char count, fingerprint, head preview), model, reasoning setting, window usage, compaction, image recognition (state, model, prompt length), reactions (state, emoji inject mode with effective whitelist source, own-emoji toggle, silent-react chance), capture mode, chime-in chance, summary preview, link to the context start, last-request token stats (incl. reasoning tokens when reported), last response time (endpoint-reported or measured) |
 | `/llm_usage` | moderator | this server's LLM token usage: all-time totals (per model) and today's aggregate - chat answers, silent-react chimes, compaction and image recognition all count |
 | `/llm_usage_global` | owner | global LLM token usage across all servers: all-time totals, today, per model and per server (ranked, capped) - the reply is ephemeral, so cross-guild numbers stay between the bot and the invoking owner |
-| `/llm_admin` | moderator | make this channel the guild's service channel for error notices (one per guild, last write wins) |
-| `/llm_admin_clear` | moderator | stop service notices |
+| `/llm_service_notices` | moderator | make this channel the guild's service channel for error notices (one per guild, last write wins) |
+| `/llm_service_notices_clear` | moderator | stop service notices |
 
 **`/llm_set` keys.** Every key takes one value; `clear`, `none` or
 `default` as the value resets the key to its default - the one keys

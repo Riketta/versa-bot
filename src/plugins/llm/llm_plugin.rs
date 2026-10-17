@@ -427,7 +427,7 @@ impl PluginPort for LlmPlugin {
         self.register_model_commands();
         self.registry.register(
             self.descriptor(
-                "llm_admin",
+                "llm_service_notices",
                 "Send LLM errors and service notices to this channel (one per guild)",
                 Vec::new(),
                 AccessTier::Moderator,
@@ -436,7 +436,7 @@ impl PluginPort for LlmPlugin {
         );
         self.registry.register(
             self.descriptor(
-                "llm_admin_clear",
+                "llm_service_notices_clear",
                 "Stop sending LLM service notices for this guild",
                 Vec::new(),
                 AccessTier::Moderator,
@@ -1610,7 +1610,7 @@ mod tests {
     }
 
     #[test]
-    fn init_registers_llm_admin_commands() {
+    fn init_registers_llm_service_notices_commands() {
         let (plugin, fixture) = fixture();
         plugin.init().expect("init expected to succeed");
 
@@ -1621,8 +1621,6 @@ mod tests {
         assert_eq!(
             names,
             [
-                "llm_admin",
-                "llm_admin_clear",
                 "llm_assign",
                 "llm_copy_settings",
                 "llm_cutoff",
@@ -1633,6 +1631,8 @@ mod tests {
                 "llm_get",
                 "llm_models",
                 "llm_sampling",
+                "llm_service_notices",
+                "llm_service_notices_clear",
                 "llm_set",
                 "llm_set_prompt",
                 "llm_status",
