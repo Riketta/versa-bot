@@ -23,12 +23,13 @@ fn age_label(age: Duration) -> String {
     format!("{hours}h {}m old", minutes % 60)
 }
 
-/// `Parsed 2941/3000 players from 3 regions · data age 2h 5m` plus the
-/// failure note when a refresh could not keep everything fresh.
+/// `# LoL Leaderboard Statistics` + the coverage line and the failure note
+/// when a refresh could not keep everything fresh. Compact by contract:
+/// no blank separators anywhere in the dump - Discord's own spacing around
+/// markdown headings and the bold rows keep the sections legible.
 fn header_block(stats: &LeaderboardStats) -> String {
     let mut lines = vec![
         "# LoL Leaderboard Statistics".to_owned(),
-        String::new(),
         format!(
             "Parsed {}/{} players from {} region{} · data age {}",
             stats.parsed,
@@ -44,7 +45,6 @@ fn header_block(stats: &LeaderboardStats) -> String {
             stats.failures.join(", ")
         ));
     }
-    lines.push(String::new());
     lines.join("\n")
 }
 
@@ -56,10 +56,10 @@ fn region_label(scope: &str) -> String {
     }
 }
 
-/// `## Role distribution in average` + one `**TOP N:**` row per bucket.
+/// `## Role distribution in average` + one `**TOP N:**` row per bucket
+/// (compact by contract - see `header_block`).
 fn role_block(section: &RoleSection) -> String {
-    let mut lines =
-        vec![format!("## Role distribution {}", region_label(&section.scope)), String::new()];
+    let mut lines = vec![format!("## Role distribution {}", region_label(&section.scope))];
     for row in &section.rows {
         let shares = row
             .shares
@@ -69,24 +69,20 @@ fn role_block(section: &RoleSection) -> String {
             .join(" | ");
         lines.push(format!("**TOP {}:** {shares}", row.bucket));
     }
-    lines.push(String::new());
     lines.join("\n")
 }
 
-/// `## Most picked champions per role` + one block per role.
+/// `## Most picked champions per role` + one block per role; the bold
+/// `**Role - N players:**` header doubles as the group separator.
 fn champ_block(blocks: &[ChampBlock]) -> String {
-    let mut lines = vec!["## Most picked champions per role".to_owned(), String::new()];
-    for (index, block) in blocks.iter().enumerate() {
-        if index > 0 {
-            lines.push(String::new());
-        }
+    let mut lines = vec!["## Most picked champions per role".to_owned()];
+    for block in blocks {
         lines.push(format!(
-            "**{}** - {} player{}",
+            "**{} - {} player{}:**",
             block.role.label(),
             block.players,
             if block.players == 1 { "" } else { "s" }
         ));
-        lines.push(String::new());
         for (rank, entry) in block.entries.iter().enumerate() {
             lines.push(format!("{}. {} - {:.1}%", rank + 1, entry.name, entry.percent));
         }
@@ -239,24 +235,29 @@ mod tests {
                                 Bot: 20.00% | Supporter: 20.00%"
         ));
         assert!(whole.contains("## Most picked champions per role"));
-        assert!(whole.contains("**Top** - 540 players"));
+        assert!(whole.contains("**Top - 540 players:**"));
         assert!(whole.contains("1. Ambessa - 14.8%"));
+        // Compact by contract: not a single blank line in the whole dump -
+        // Discord's heading spacing and the bold rows are the separators.
+        assert!(!whole.contains("\n\n"));
+        let header = rendered.first().expect("header message");
+        assert!(header.starts_with("# LoL Leaderboard Statistics\nParsed"));
     }
 
-    /// Every generated line is complete: a heading, a blank separator, a
-    /// bold row/role line, a numbered champion entry, or a coverage/failure
-    /// note. A message may START mid-section (line-split continuation),
-    /// but never mid-line.
+    /// Every generated line is complete: a heading, a bold row/role line,
+    /// a numbered champion entry, or a coverage/failure note - and none of
+    /// them blank (the dump is compact by contract). A message may START
+    /// mid-section (line-split continuation), but never mid-line.
     fn complete_lines_only(message: &str) {
         for line in message.lines() {
             assert!(
-                line.starts_with('#')
-                    || line.is_empty()
-                    || line.starts_with("**")
-                    || line.starts_with("Parsed")
-                    || line.starts_with("Could not refresh")
-                    || line.chars().next().is_some_and(|c| c.is_ascii_digit()),
-                "partial line in output: {line:?}"
+                !line.is_empty()
+                    && (line.starts_with('#')
+                        || line.starts_with("**")
+                        || line.starts_with("Parsed")
+                        || line.starts_with("Could not refresh")
+                        || line.chars().next().is_some_and(|c| c.is_ascii_digit())),
+                "blank or partial line in output: {line:?}"
             );
         }
     }

@@ -1251,21 +1251,13 @@ Example output shape (abridged):
 
 ````markdown
 # LoL Leaderboard Statistics
-
 Parsed 3000/3000 players from 3 regions · data age 2h 5m old
-
 ## Role distribution in average
-
 **TOP 300:** Top: 18.67% | Jungle: 26.33% | Middle: 19.67% | Bot: 24.67% | Supporter: 10.67%
-
 ## Role distribution in KR
-
 **TOP 300:** Top: 18.67% | Jungle: 26.33% | Middle: 19.67% | Bot: 24.67% | Supporter: 10.67%
-
 ## Most picked champions per role
-
-**Top** - 540 players
-
+**Top - 540 players:**
 1. Ambessa - 14.8%
 2. Rumble - 14.4%
 ````
