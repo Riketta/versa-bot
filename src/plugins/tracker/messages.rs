@@ -167,7 +167,7 @@ pub fn edit_notice(
         Some(previous) => {
             out.push_str("was:\n");
             out.push_str(&fenced(&clipped(previous, clip)));
-            out.push_str("\nnow:\n");
+            out.push_str("now:\n");
             out.push_str(&fenced(&clipped(current, clip)));
         }
         None => {
@@ -244,6 +244,13 @@ mod tests {
         assert!(edit.contains(&jump_url(key())), "edit: {edit}");
         assert!(edit.contains("was:"), "edit: {edit}");
         assert!(edit.contains("now:"), "edit: {edit}");
+        // Compact by contract: `now:` sits directly under the closing
+        // fence of the "was" block - no blank separator between them.
+        assert_eq!(
+            edit,
+            "✏️ **Riketta** edited a message in <#20>: \
+             https://discord.com/channels/1/20/300\nwas:\n```\nold\n```now:\n```\nnew\n```"
+        );
 
         let unknown = edit_notice(500, "Riketta", key(), None, "new");
         assert!(
