@@ -9,6 +9,7 @@ use serenity::all::{
     UserId as SerenityUserId,
 };
 use serenity::async_trait;
+use serenity::cache::Cache;
 
 use crate::infrastructure::outbound_adapters::{GatewayContext, MentionKind, parse_mention_tag};
 use crate::kernel::{
@@ -121,15 +122,20 @@ impl<H: RequestHandlerPort> EventHandler for DiscordGatewayAdapter<H> {
         _new: Option<Message>,
         event: MessageUpdateEvent,
     ) {
-        // MESSAGE_UPDATE carries no guild id: resolve it - and the guild
-        // display name - from the gateway cache through the channel. DM
-        // channels are not cached, degrading to a guild-less event. The
-        // lookup is deprecated in serenity without a reverse (channel ->
-        // guild) replacement, so the deprecation is acknowledged here.
-        // Guards are scoped to this block: they must be dropped before the
-        // pipeline await below.
-        #[allow(deprecated)]
-        let guild_id = ctx.cache.channel(event.channel_id).map(|channel| channel.guild_id);
+        // MESSAGE_UPDATE carries the guild id for guild messages - trust it
+        // first (this is the only path that resolves thread channels: they
+        // are cached, if at all, behind the `temp_cache` feature this build
+        // does not enable). The deprecated gateway-cache reverse lookup
+        // stays as the fallback for payloads that omit the field; DMs
+        // degrade to a guild-less event either way. Guards are scoped to
+        // this block: they must be dropped before the pipeline await below.
+        let guild_id = message_update_guild_id(&event, &ctx.cache);
+        if guild_id.is_none() {
+            tracing::debug!(
+                channel = event.channel_id.get(),
+                "message update without a resolvable guild - edit tracking degrades"
+            );
+        }
         let guild_name =
             guild_id.and_then(|guild_id| ctx.cache.guild(guild_id)).map(|guild| guild.name.clone());
         let bot_user_id = ctx.cache.current_user().id.get();
@@ -551,6 +557,16 @@ fn message_event(
     }
 
     Some(event)
+}
+
+/// Payload-first guild resolution for MESSAGE_UPDATE: the wire payload
+/// names the guild for guild messages, and the deprecated gateway-cache
+/// reverse lookup covers payloads that omit it.
+fn message_update_guild_id(event: &MessageUpdateEvent, cache: &Cache) -> Option<SerenityGuildId> {
+    event.guild_id.or_else(|| {
+        #[allow(deprecated)]
+        cache.channel(event.channel_id).map(|channel| channel.guild_id)
+    })
 }
 
 /// Pure core of the MESSAGE_UPDATE handler: maps a message edit onto
@@ -1441,6 +1457,23 @@ mod tests {
         assert_eq!(payload.author_name.as_deref(), Some("human"));
         assert_eq!(payload.guild_name.as_deref(), Some("Forge"));
         assert!(!payload.mentions_bot);
+    }
+
+    /// Guild resolution for edits is payload-first: the wire payload names
+    /// the guild, and trusting it is the ONLY path that resolves edits in
+    /// thread channels (this build caches no threads, so the deprecated
+    /// cache reverse lookup misses there). A payload without the field
+    /// falls back to the cache - empty here, so it degrades to guild-less
+    /// exactly as before.
+    #[test]
+    fn message_update_guild_id_prefers_the_payload_over_the_cache() {
+        let cache = Cache::default();
+
+        let payload = update_event(&update_json(r#""guild_id": "3000", "#));
+        assert_eq!(message_update_guild_id(&payload, &cache), Some(SerenityGuildId::new(3000)));
+
+        let bare = update_event(&update_json(r#""mentions": [], "#));
+        assert_eq!(message_update_guild_id(&bare, &cache), None);
     }
 
     #[test]
