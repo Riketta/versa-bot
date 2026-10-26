@@ -533,8 +533,12 @@ on, across every channel the bot can read:
   the original was never seen (sent before the bot started, or beyond
   the capture horizon), the notice says so instead of inventing one.
 - **Deletions**: `🗑 **<user>** deleted a message in <#channel>` with the
-  captured text; an uncached message degrades to a plain "a message was
-  deleted" fact.
+  captured text and the captured attachments as link lines (capped at
+  five, the rest counted; CDN links can expire, so old ones may be
+  dead). An image-only message quotes its attachment links instead of an
+  empty fence; a capture with neither text nor attachments prints a
+  `(no text)` fence; an uncached message degrades to a plain "a message
+  was deleted" fact.
 - **Purges**: a mass delete is one `🗑️ N messages were purged` notice,
   never one per message.
 

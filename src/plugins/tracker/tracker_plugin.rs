@@ -170,6 +170,7 @@ impl<B: EventBusPort> MiddlewarePluginPort for UserActivityTrackerPlugin<B> {
                         MessageKey::new(guild_id, event.origin.channel_id, message_id),
                         message.author_name.clone(),
                         message.content.clone(),
+                        message.attachments.clone(),
                     );
                 }
             }
@@ -256,8 +257,12 @@ impl<B: EventBusPort> UserActivityTrackerPlugin<B> {
             return;
         };
         let key = MessageKey::new(guild_id, origin.channel_id, message_id);
-        let previous =
-            self.messages.revise(key, message.author_name.clone(), message.content.clone());
+        let previous = self.messages.revise(
+            key,
+            message.author_name.clone(),
+            message.content.clone(),
+            message.attachments.clone(),
+        );
         if previous.as_deref() == Some(message.content.as_str()) {
             return;
         }
@@ -323,7 +328,7 @@ impl<B: EventBusPort> UserActivityTrackerPlugin<B> {
                         format!("user {}", origin.user_id.get())
                     }
                 });
-                delete_notice(self.notice_limit, &author, key, &message.content)
+                delete_notice(self.notice_limit, &author, key, &message)
             }
             None => delete_unknown_notice(key),
         };
