@@ -637,7 +637,7 @@ impl CommandHandler for AssignTrackerHandler {
         services
             .chat_output
             .send(command_reply(
-                "Tracker assigned: member joins and leaves will be logged in this channel.",
+                "Tracker assigned: joins, leaves, invites, message edits and deletions will be logged in this channel.",
             ))
             .await?;
         Ok(())
@@ -668,7 +668,7 @@ impl CommandHandler for UnassignTrackerHandler {
         services
             .chat_output
             .send(command_reply(
-                "Tracker unassigned: member joins and leaves are no longer logged.",
+                "Tracker unassigned: joins, leaves, invites, message edits and deletions are no longer logged.",
             ))
             .await?;
         Ok(())
